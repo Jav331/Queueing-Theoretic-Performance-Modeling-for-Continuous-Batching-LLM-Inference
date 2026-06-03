@@ -35,12 +35,20 @@ from analytical.approximation import (
     PROMPT_SIGMA,
     lognormal_expected_value,
 )
+from analytical.fit_service_rate import LatencyModel, get_iteration_latency
 from simulator.simpy_simulator import iteration_latency
 
 
-def _service_time_at(batch: int, avg_prompt: float, avg_generation: float) -> float:
-    prefill = iteration_latency(batch, int(round(avg_prompt)), "prefill")
-    decode_iter = iteration_latency(batch, 1, "decode")
+def _service_time_at(
+    batch: int,
+    avg_prompt: float,
+    avg_generation: float,
+    latency_model: LatencyModel | None = None,
+) -> float:
+    prefill = get_iteration_latency(
+        latency_model, batch, int(round(avg_prompt)), "prefill"
+    )
+    decode_iter = get_iteration_latency(latency_model, batch, 1, "decode")
     return prefill + avg_generation * decode_iter
 
 
@@ -133,6 +141,7 @@ def two_stage_metrics(
     *,
     prompt_mean: float = 256.0,
     generation_mean: float = 128.0,
+    latency_model: LatencyModel | None = None,
 ) -> dict[str, float]:
     """Two-stage closed-form approximation; see module docstring for the model."""
     avg_prompt = lognormal_expected_value(prompt_mean, PROMPT_SIGMA)
@@ -145,7 +154,7 @@ def two_stage_metrics(
     service_rates: list[float] = []
     for n in range(1, n_max + 1):
         active = min(n, active_cap)
-        s = _service_time_at(active, avg_prompt, avg_generation)
+        s = _service_time_at(active, avg_prompt, avg_generation, latency_model)
         service_rates.append(active / s if s > 0 else 0.0)
 
     p = birth_death_distribution(arrival_rate, service_rates)
@@ -173,15 +182,17 @@ def two_stage_metrics(
     else:
         bar_b = 1
     first_token_service = (
-        iteration_latency(bar_b, int(round(avg_prompt)), "prefill")
-        + iteration_latency(bar_b, 1, "decode")
+        get_iteration_latency(latency_model, bar_b, int(round(avg_prompt)), "prefill")
+        + get_iteration_latency(latency_model, bar_b, 1, "decode")
     )
     mean_ttft = mean_admission_wait + first_token_service
 
     # Tail via Erlang inversion. mu_full is the drain rate from a fully
     # active batch of size C; that is the rate at which slots free up while
     # the waiting queue is non-empty.
-    s_full = _service_time_at(active_cap, avg_prompt, avg_generation)
+    s_full = _service_time_at(
+        active_cap, avg_prompt, avg_generation, latency_model
+    )
     mu_full = active_cap / s_full if s_full > 0 else 0.0
 
     return {

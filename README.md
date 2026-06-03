@@ -58,3 +58,23 @@ Generate simulation-vs-analytical comparison plots:
 ```
 
 The plotting command writes parity plots and relative-error bars under `figures/`.
+
+## Modal/vLLM serving sweep
+
+Validate the vLLM benchmark harness with one small Modal smoke run:
+
+```powershell
+$env:MODAL_PROFILE='adamco27'
+$env:PYTHONIOENCODING='utf-8'
+$env:PYTHONUTF8='1'
+.\.venv\Scripts\modal.exe run experiments/run_vllm_sweep.py --smoke
+```
+
+The harness replays `data/sharegpt_trace.parquet` by converting it to vLLM's custom JSONL benchmark format, preserving each row's `prompt_text` and forcing per-request output length from `gen_len`. It writes `results/vllm_sweep_summary.csv` with the same column schema as `results/sweep_summary.csv`; vLLM version, server flags, benchmark flags, TPOT, throughput, preemption count, and realized KV cache metadata are written to `results/vllm_sweep_metadata.json`.
+
+Only run the full grid after the smoke run looks good:
+
+```powershell
+$env:MODAL_PROFILE='adamco27'
+.\.venv\Scripts\modal.exe run experiments/run_vllm_sweep.py
+```

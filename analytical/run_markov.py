@@ -8,6 +8,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from analytical.markov_solver import markov_metrics
+from analytical.fit_service_rate import load_latency_curve
 from analytical.state_space import DEFAULT_PAGE_SIZE
 from experiments.run_sweep import parse_float_list, parse_int_list
 
@@ -67,11 +68,18 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("results") / "markov_summary.csv",
     )
+    parser.add_argument(
+        "--latency-curve",
+        type=Path,
+        default=None,
+        help="Optional results/latency_curve.json from Modal microbenchmarks.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    latency_model = load_latency_curve(args.latency_curve)
     configs = list(
         product(args.arrival_rates, args.max_batch_sizes, args.kv_budgets)
     )
@@ -86,6 +94,7 @@ def main() -> None:
             generation_mean=args.generation_mean,
             n_classes=args.n_classes,
             page_size=args.page_size,
+            latency_model=latency_model,
         )
         max_states = max(max_states, result.pop("n_states"))
         rows.append(result)

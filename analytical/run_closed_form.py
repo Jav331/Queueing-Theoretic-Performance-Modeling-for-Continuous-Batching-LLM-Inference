@@ -6,6 +6,7 @@ from itertools import product
 from pathlib import Path
 
 from analytical.closed_form import two_stage_metrics
+from analytical.fit_service_rate import load_latency_curve
 from experiments.run_sweep import parse_float_list, parse_int_list
 
 
@@ -56,11 +57,18 @@ def parse_args() -> argparse.Namespace:
         default=Path("results") / "closed_form_summary.csv",
         help="CSV path for closed-form summary metrics.",
     )
+    parser.add_argument(
+        "--latency-curve",
+        type=Path,
+        default=None,
+        help="Optional results/latency_curve.json from Modal microbenchmarks.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    latency_model = load_latency_curve(args.latency_curve)
     rows = [
         two_stage_metrics(
             arrival_rate,
@@ -68,6 +76,7 @@ def main() -> None:
             kv_budget,
             prompt_mean=args.prompt_mean,
             generation_mean=args.generation_mean,
+            latency_model=latency_model,
         )
         for arrival_rate, max_batch_size, kv_budget in product(
             args.arrival_rates, args.max_batch_sizes, args.kv_budgets

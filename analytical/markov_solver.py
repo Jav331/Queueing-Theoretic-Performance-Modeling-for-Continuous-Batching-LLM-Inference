@@ -31,6 +31,7 @@ import scipy.sparse.linalg as spla
 
 from analytical.approximation import MAX_UNSTABLE_WAIT_SECONDS
 from analytical.closed_form import erlang_cdf
+from analytical.fit_service_rate import LatencyModel, get_iteration_latency
 from analytical.state_space import (
     DEFAULT_PAGE_SIZE,
     RequestClass,
@@ -42,15 +43,21 @@ from analytical.state_space import (
 from simulator.simpy_simulator import iteration_latency
 
 
-def _service_time(batch: int, classes: list[RequestClass]) -> float:
+def _service_time(
+    batch: int,
+    classes: list[RequestClass],
+    latency_model: LatencyModel | None = None,
+) -> float:
     if batch <= 0:
         return float("inf")
     # Use the unconditional E[prompt], E[generation] averaged over the
     # arrival mix so the service rate matches the simulator's behavior.
     avg_prompt = sum(c.expected_prompt * c.arrival_share for c in classes)
     avg_generation = sum(c.expected_generation * c.arrival_share for c in classes)
-    prefill = iteration_latency(batch, int(round(avg_prompt)), "prefill")
-    decode_iter = iteration_latency(batch, 1, "decode")
+    prefill = get_iteration_latency(
+        latency_model, batch, int(round(avg_prompt)), "prefill"
+    )
+    decode_iter = get_iteration_latency(latency_model, batch, 1, "decode")
     return prefill + avg_generation * decode_iter
 
 
@@ -59,6 +66,7 @@ def build_generator(
     max_batch_size: int,
     kv_budget_pages: int,
     classes: list[RequestClass],
+    latency_model: LatencyModel | None = None,
 ) -> tuple[sp.csr_matrix, list[tuple[int, ...]], dict[tuple[int, ...], int]]:
     """Construct the sparse infinitesimal generator Q for the multi-class chain.
 
@@ -97,7 +105,7 @@ def build_generator(
         total = total_in_system(state)
         if total > 0:
             active = min(total, max_batch_size)
-            s = _service_time(active, classes)
+            s = _service_time(active, classes, latency_model)
             total_rate = active / s if s > 0 else 0.0
             for c in range(n_classes):
                 if state[c] == 0:
@@ -210,6 +218,7 @@ def markov_metrics(
     n_classes: int = 2,
     page_size: int = DEFAULT_PAGE_SIZE,
     classes: Optional[list[RequestClass]] = None,
+    latency_model: LatencyModel | None = None,
 ) -> dict[str, float]:
     """Solve the multi-class chain at (lambda, B, K) and extract metrics."""
     if classes is None:
@@ -224,7 +233,7 @@ def markov_metrics(
     arrival_rates = [arrival_rate * c.arrival_share for c in classes]
 
     q_matrix, states, _ = build_generator(
-        arrival_rate, max_batch_size, kv_budget_pages, classes
+        arrival_rate, max_batch_size, kv_budget_pages, classes, latency_model
     )
     pi = solve_stationary(q_matrix)
 
@@ -254,8 +263,8 @@ def markov_metrics(
         bar_b = 1
     avg_prompt = sum(c.expected_prompt * c.arrival_share for c in classes)
     first_token_service = (
-        iteration_latency(bar_b, int(round(avg_prompt)), "prefill")
-        + iteration_latency(bar_b, 1, "decode")
+        get_iteration_latency(latency_model, bar_b, int(round(avg_prompt)), "prefill")
+        + get_iteration_latency(latency_model, bar_b, 1, "decode")
     )
 
     # Mean wait via Little's law on the (post-arrival) queue length.
@@ -272,7 +281,7 @@ def markov_metrics(
     mean_ttft = mean_wait + first_token_service
 
     # Tail TTFT via PASTA-weighted Erlang-CDF inversion.
-    s_full = _service_time(max_batch_size, classes)
+    s_full = _service_time(max_batch_size, classes, latency_model)
     mu_full = max_batch_size / s_full if s_full > 0 else 0.0
 
     def cdf(t: float) -> float:
