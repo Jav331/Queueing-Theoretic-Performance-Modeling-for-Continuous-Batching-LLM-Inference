@@ -213,21 +213,8 @@ output length from `gen_len`. It writes:
 `results/sweep_summary.csv`. vLLM version, flags, TPOT, throughput, preemption
 count, and realized KV cache metadata are recorded in the metadata JSON.
 
-## Report Notes
-
-Use these files when writing the final report:
-
-- `writeup/report_results.md`: current result summary and suggested claims
-- `writeup/model_spec.md`: analytical model derivations and assumptions
-- `writeup/notes_for_adam.md`: analytical-track implementation notes
-
 ## Project Naming
 
 Project title: **Queueing-Theoretic Performance Modeling for Continuous-Batching
 LLM Inference**.
 
-Suggested GitHub repository name if renaming the remote:
-
-```text
-queueing-llm-inference-modeling
-```
